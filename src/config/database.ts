@@ -24,3 +24,12 @@ export async function disconnectDatabase(): Promise<void> {
   await pool.end();
   logger.info("Database disconnected");
 }
+
+export async function pingDatabase(): Promise<boolean> {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return true;
+  } catch {
+    return false;
+  }
+}

@@ -20,10 +20,10 @@ export interface CSVBatch {
  * of `batchSize` before being yielded to the caller for insertion.
  */
 export async function* parseCSVStream(
-  buffer: Buffer,
+  input: Buffer | Readable,
   batchSize: number = 500,
 ): AsyncGenerator<CSVBatch> {
-  const stream = Readable.from(buffer);
+  const stream = Buffer.isBuffer(input) ? Readable.from(input) : input;
 
   const parser = stream.pipe(
     parse({

@@ -3,6 +3,7 @@ import { uploadFileToGCS } from "../services/gcs.service.js";
 import { parseCSVStream } from "../services/csv-parser.service.js";
 import { insertOrderBatch } from "../services/orders.service.js";
 import { logger } from "../utils/logger.js";
+import { AppError } from "../middleware/error.middleware.js";
 import type { InvalidRow } from "../utils/validators.js";
 
 const MAX_ERRORS_IN_RESPONSE = 100;
@@ -20,14 +21,12 @@ export async function uploadOrders(req: Request, res: Response): Promise<void> {
   const startTime = Date.now();
 
   try {
-    // 1. Validate file exists
     const file = req.file;
     if (!file) {
-      res.status(400).json({
-        success: false,
-        error: "No file uploaded. Send a CSV file in the 'file' field.",
-      });
-      return;
+      throw new AppError(
+        "No file uploaded. Send a CSV file in the 'file' field.",
+        400,
+      );
     }
 
     logger.info("Order upload started", {
@@ -36,10 +35,8 @@ export async function uploadOrders(req: Request, res: Response): Promise<void> {
       mimetype: file.mimetype,
     });
 
-    // 2. Upload to GCS and parse CSV concurrently
     const gcsUploadPromise = uploadFileToGCS(file.buffer, file.originalname);
 
-    // 3. Stream-parse and batch insert
     let totalRows = 0;
     let insertedRows = 0;
     const allInvalidRows: InvalidRow[] = [];
@@ -49,7 +46,6 @@ export async function uploadOrders(req: Request, res: Response): Promise<void> {
       batchNumber++;
       totalRows += batch.validOrders.length + batch.invalidRows.length;
 
-      // Insert valid orders
       if (batch.validOrders.length > 0) {
         const inserted = await insertOrderBatch(batch.validOrders);
         insertedRows += inserted;
@@ -61,7 +57,6 @@ export async function uploadOrders(req: Request, res: Response): Promise<void> {
         });
       }
 
-      // Collect invalid rows (capped for response)
       if (allInvalidRows.length < MAX_ERRORS_IN_RESPONSE) {
         allInvalidRows.push(
           ...batch.invalidRows.slice(
@@ -72,9 +67,7 @@ export async function uploadOrders(req: Request, res: Response): Promise<void> {
       }
     }
 
-    // 4. Await GCS upload completion
     const gcsResult = await gcsUploadPromise;
-
     const processingTimeMs = Date.now() - startTime;
 
     logger.info("Order upload completed", {
@@ -86,7 +79,6 @@ export async function uploadOrders(req: Request, res: Response): Promise<void> {
       gcsUri: gcsResult.gcsUri,
     });
 
-    // 5. Return response
     res.status(200).json({
       success: true,
       gcsUri: gcsResult.gcsUri,

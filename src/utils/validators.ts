@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export interface ParsedOrder {
   orderId: string;
   customerId: string;
@@ -27,7 +29,61 @@ const ALLOWED_STATUSES = [
   "completed",
   "returned",
   "refunded",
-];
+] as const;
+
+const orderRowSchema = z.object({
+  order_id: z.string().min(1, "order_id is required"),
+  customer_id: z.string().min(1, "customer_id is required"),
+  order_date: z
+    .string()
+    .min(1, "order_date is required")
+    .transform((val, ctx) => {
+      const d = new Date(val);
+      if (isNaN(d.getTime())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `order_date is not a valid date: "${val}"`,
+        });
+        return z.NEVER;
+      }
+      return d;
+    }),
+  order_amount: z
+    .string()
+    .min(1, "order_amount is required")
+    .transform((val, ctx) => {
+      const num = parseFloat(val);
+      if (isNaN(num)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `order_amount is not a valid number: "${val}"`,
+        });
+        return z.NEVER;
+      }
+      if (num < 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `order_amount must be non-negative: ${num}`,
+        });
+        return z.NEVER;
+      }
+      return num;
+    }),
+  status: z
+    .string()
+    .min(1, "status is required")
+    .transform((val) => val.toLowerCase())
+    .superRefine((val, ctx) => {
+      if (
+        !ALLOWED_STATUSES.includes(val as (typeof ALLOWED_STATUSES)[number])
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `status "${val}" is not valid. Allowed: ${ALLOWED_STATUSES.join(", ")}`,
+        });
+      }
+    }),
+});
 
 /**
  * Validates a single CSV row and returns a typed ParsedOrder if valid.
@@ -35,62 +91,13 @@ const ALLOWED_STATUSES = [
  */
 export function validateOrderRow(
   row: Record<string, string>,
-  rowNumber: number,
+  _rowNumber: number,
 ): ValidationResult {
-  const errors: string[] = [];
-
-  // Normalize keys to handle header variations (e.g., "Order ID", "order_id", "orderId")
   const normalized = normalizeRow(row);
+  const parsed = orderRowSchema.safeParse(normalized);
 
-  // --- order_id ---
-  const orderId = normalized.order_id?.trim();
-  if (!orderId) {
-    errors.push("order_id is required");
-  }
-
-  // --- customer_id ---
-  const customerId = normalized.customer_id?.trim();
-  if (!customerId) {
-    errors.push("customer_id is required");
-  }
-
-  // --- order_date ---
-  const rawDate = normalized.order_date?.trim();
-  let orderDate: Date | undefined;
-  if (!rawDate) {
-    errors.push("order_date is required");
-  } else {
-    orderDate = new Date(rawDate);
-    if (isNaN(orderDate.getTime())) {
-      errors.push(`order_date is not a valid date: "${rawDate}"`);
-    }
-  }
-
-  // --- order_amount ---
-  const rawAmount = normalized.order_amount?.trim();
-  let orderAmount: number | undefined;
-  if (!rawAmount) {
-    errors.push("order_amount is required");
-  } else {
-    orderAmount = parseFloat(rawAmount);
-    if (isNaN(orderAmount)) {
-      errors.push(`order_amount is not a valid number: "${rawAmount}"`);
-    } else if (orderAmount < 0) {
-      errors.push(`order_amount must be non-negative: ${orderAmount}`);
-    }
-  }
-
-  // --- status ---
-  const status = normalized.status?.trim().toLowerCase();
-  if (!status) {
-    errors.push("status is required");
-  } else if (!ALLOWED_STATUSES.includes(status)) {
-    errors.push(
-      `status "${status}" is not valid. Allowed: ${ALLOWED_STATUSES.join(", ")}`,
-    );
-  }
-
-  if (errors.length > 0) {
+  if (!parsed.success) {
+    const errors = parsed.error.issues.map((issue) => issue.message);
     return { valid: false, errors };
   }
 
@@ -98,11 +105,11 @@ export function validateOrderRow(
     valid: true,
     errors: [],
     data: {
-      orderId: orderId!,
-      customerId: customerId!,
-      orderDate: orderDate!,
-      orderAmount: orderAmount!,
-      status: status!,
+      orderId: parsed.data.order_id,
+      customerId: parsed.data.customer_id,
+      orderDate: parsed.data.order_date,
+      orderAmount: parsed.data.order_amount,
+      status: parsed.data.status,
     },
   };
 }
