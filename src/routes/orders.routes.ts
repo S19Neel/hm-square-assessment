@@ -14,9 +14,8 @@ const router: Router = Router();
  * POST /upload-orders
  *
  * Accepts a CSV file via multipart/form-data (field name: "file").
- * - Uploads the file to Google Cloud Storage
- * - Parses and validates CSV rows
- * - Batch inserts valid orders into PostgreSQL (hash-partitioned)
+ * - Uploads the file to Google Cloud Storage (with retries)
+ * - Stream-parses CSV and batch inserts valid orders into PostgreSQL (hash-partitioned)
  * - Persists invalid rows into OrderError table
  * - Returns processing summary with uploadId and errors sample
  */

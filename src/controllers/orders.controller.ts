@@ -11,6 +11,7 @@ import {
   findOrdersByCustomerId,
   findErrorsByUploadId,
 } from "../services/orders.service.js";
+import { withRetry } from "../utils/retry.js";
 import { logger } from "../utils/logger.js";
 import { AppError } from "../middleware/error.middleware.js";
 
@@ -23,12 +24,12 @@ interface SampleError {
 /**
  * POST /upload-orders
  *
- * Orchestrates file ingestion:
- * 1. Validate file exists
- * 2. Upload file to GCS (concurrently)
- * 3. Stream-parse CSV, insert valid orders in batches
- * 4. Persist invalid/malformed rows to database (OrderError)
- * 5. Return upload ID, GCS URI, and summary statistics
+ * Orchestrates the full upload flow:
+ * 1. Validate uploaded file
+ * 2. Upload file to GCS via ADC (with retry logic)
+ * 3. Stream-parse CSV and batch insert into PostgreSQL (hash-partitioned)
+ * 4. Persist malformed/invalid rows to OrderError table
+ * 5. Return processing summary and error details
  */
 export async function uploadOrders(req: Request, res: Response): Promise<void> {
   const startTime = Date.now();
@@ -50,7 +51,11 @@ export async function uploadOrders(req: Request, res: Response): Promise<void> {
       mimetype: file.mimetype,
     });
 
-    const gcsUploadPromise = uploadFileToGCS(file.buffer, file.originalname);
+    // Upload to GCS concurrently with automatic retry logic
+    const gcsUploadPromise = withRetry(
+      () => uploadFileToGCS(file.buffer, file.originalname),
+      { operationName: "GCSUpload" },
+    );
 
     let totalRows = 0;
     let insertedRows = 0;
@@ -63,7 +68,10 @@ export async function uploadOrders(req: Request, res: Response): Promise<void> {
       totalRows += batch.validOrders.length + batch.invalidRows.length;
 
       if (batch.validOrders.length > 0) {
-        const inserted = await insertOrderBatch(batch.validOrders);
+        const inserted = await withRetry(
+          () => insertOrderBatch(batch.validOrders),
+          { operationName: `BatchInsert-${batchNumber}` },
+        );
         insertedRows += inserted;
 
         logger.info("Batch processed", {
@@ -87,7 +95,10 @@ export async function uploadOrders(req: Request, res: Response): Promise<void> {
           }
         }
 
-        await insertOrderErrors(uploadId, batch.invalidRows);
+        await withRetry(
+          () => insertOrderErrors(uploadId, batch.invalidRows),
+          { operationName: `ErrorInsert-${batchNumber}` },
+        );
       }
     }
 

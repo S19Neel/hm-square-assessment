@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hm2_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: hm2-assessment
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./prisma/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hm2-assessment"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hm2_app
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      PORT: 5000
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/hm2-assessment
+      GCS_BUCKET_NAME: ${GCS_BUCKET_NAME:-MY_GCS_BUCKET}
+      LOG_LEVEL: info
+    volumes:
+      # Mount Google Cloud Application Default Credentials from host OS if available
+      - ~/.config/gcloud:/root/.config/gcloud:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
