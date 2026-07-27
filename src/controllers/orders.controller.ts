@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { randomUUID } from "crypto";
-import { z } from "zod";
+import { MAX_ERRORS_IN_RESPONSE } from "../constants/index.js";
+import { getOrdersQuerySchema } from "../validations/index.js";
 import { uploadFileToGCS } from "../services/gcs.service.js";
 import { parseCSVStream } from "../services/csv-parser.service.js";
 import {
@@ -12,16 +13,12 @@ import {
 } from "../services/orders.service.js";
 import { logger } from "../utils/logger.js";
 import { AppError } from "../middleware/error.middleware.js";
-import type { InvalidRow } from "../utils/validators.js";
 
-const MAX_ERRORS_IN_RESPONSE = 100;
-
-const getOrdersQuerySchema = z.object({
-  customerId: z.string().optional(),
-  status: z.string().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
-});
+interface SampleError {
+  row: number;
+  errors: string[];
+  data: Record<string, string>;
+}
 
 /**
  * POST /upload-orders
@@ -57,7 +54,8 @@ export async function uploadOrders(req: Request, res: Response): Promise<void> {
 
     let totalRows = 0;
     let insertedRows = 0;
-    const allInvalidRows: InvalidRow[] = [];
+    let totalFailedRows = 0;
+    const sampleErrors: SampleError[] = [];
     let batchNumber = 0;
 
     for await (const batch of parseCSVStream(file.buffer)) {
@@ -77,7 +75,18 @@ export async function uploadOrders(req: Request, res: Response): Promise<void> {
       }
 
       if (batch.invalidRows.length > 0) {
-        allInvalidRows.push(...batch.invalidRows);
+        totalFailedRows += batch.invalidRows.length;
+
+        for (const row of batch.invalidRows) {
+          if (sampleErrors.length < MAX_ERRORS_IN_RESPONSE) {
+            sampleErrors.push({
+              row: row.rowNumber,
+              errors: row.errors,
+              data: row.rawData,
+            });
+          }
+        }
+
         await insertOrderErrors(uploadId, batch.invalidRows);
       }
     }
@@ -95,8 +104,6 @@ export async function uploadOrders(req: Request, res: Response): Promise<void> {
       gcsUri: gcsResult.gcsUri,
     });
 
-    const sampleErrors = allInvalidRows.slice(0, MAX_ERRORS_IN_RESPONSE);
-
     res.status(200).json({
       success: true,
       uploadId,
@@ -104,20 +111,16 @@ export async function uploadOrders(req: Request, res: Response): Promise<void> {
       summary: {
         totalRows,
         insertedRows,
-        failedRows: allInvalidRows.length,
+        failedRows: totalFailedRows,
         skippedRows: totalRows - insertedRows,
         processingTimeMs,
       },
       errors:
-        allInvalidRows.length > 0
+        totalFailedRows > 0
           ? {
-              totalFailed: allInvalidRows.length,
+              totalFailed: totalFailedRows,
               sampleCount: sampleErrors.length,
-              samples: sampleErrors.map((row) => ({
-                row: row.rowNumber,
-                errors: row.errors,
-                data: row.rawData,
-              })),
+              samples: sampleErrors,
             }
           : null,
     });
@@ -215,7 +218,7 @@ export async function getUploadErrors(
     success: true,
     uploadId,
     totalErrors: errors.length,
-    errors: errors.map((e: any) => ({
+    errors: errors.map((e) => ({
       rowNumber: e.rowNumber,
       rawData: e.rawData,
       errors: e.errors,

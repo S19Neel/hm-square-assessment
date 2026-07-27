@@ -1,20 +1,15 @@
 import { prisma } from "../config/database.js";
 import { logger } from "../utils/logger.js";
-import type { ParsedOrder, InvalidRow } from "../utils/validators.js";
+import { NUM_PARTITIONS } from "../constants/index.js";
+import type {
+  ParsedOrder,
+  InvalidRow,
+  QueryOrdersParams,
+  ShardMetadata,
+  PartitionMetricsResult,
+} from "../types/index.js";
 
-const NUM_PARTITIONS = 4;
-
-export interface QueryOrdersParams {
-  customerId?: string;
-  status?: string;
-  page: number;
-  limit: number;
-}
-
-export interface ShardMetadata {
-  partition: string;
-  partitionIndex: number;
-}
+export type { QueryOrdersParams, ShardMetadata };
 
 /**
  * Batch-inserts validated orders into PostgreSQL using Prisma's createMany.
@@ -55,7 +50,7 @@ export async function insertOrderErrors(
 ): Promise<number> {
   if (invalidRows.length === 0) return 0;
 
-  const created = await (prisma as any).orderError.createMany({
+  const created = await prisma.orderError.createMany({
     data: invalidRows.map((row) => ({
       uploadId,
       rowNumber: row.rowNumber,
@@ -136,7 +131,7 @@ export async function findOrdersByCustomerId(params: QueryOrdersParams) {
  * Retrieves persisted error records for a given upload session ID.
  */
 export async function findErrorsByUploadId(uploadId: string) {
-  const errors = await (prisma as any).orderError.findMany({
+  const errors = await prisma.orderError.findMany({
     where: { uploadId },
     orderBy: { rowNumber: "asc" },
   });
@@ -184,7 +179,7 @@ export async function getShardInfo(customerId: string): Promise<ShardMetadata> {
 /**
  * Returns total counts and distribution of orders across PostgreSQL hash partitions.
  */
-export async function getPartitionMetrics() {
+export async function getPartitionMetrics(): Promise<PartitionMetricsResult> {
   let partitions: { partition: string; count: number }[] = [];
   let totalOrders = 0;
   let totalErrors = 0;
@@ -198,7 +193,7 @@ export async function getPartitionMetrics() {
         GROUP BY tableoid
         ORDER BY partition`,
       prisma.order.count(),
-      (prisma as any).orderError.count(),
+      prisma.orderError.count(),
     ]);
 
     partitions = rawPartitions.map(

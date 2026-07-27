@@ -2,15 +2,12 @@ import { Readable } from "stream";
 import { Storage } from "@google-cloud/storage";
 import { env } from "../config/env.js";
 import { logger } from "../utils/logger.js";
+import type { GCSUploadResult } from "../types/index.js";
+
+export type { GCSUploadResult };
 
 const storage = new Storage();
 const bucket = storage.bucket(env.GCS_BUCKET_NAME);
-
-export interface GCSUploadResult {
-  gcsUri: string;
-  publicUrl: string;
-  filename: string;
-}
 
 /**
  * Uploads a file buffer to Google Cloud Storage.

@@ -141,7 +141,7 @@ describe("orders.service", () => {
         },
       ];
 
-      vi.mocked((prisma as any).orderError.findMany).mockResolvedValueOnce(
+      vi.mocked(prisma.orderError.findMany).mockResolvedValueOnce(
         mockErrors as any,
       );
 
@@ -149,7 +149,7 @@ describe("orders.service", () => {
 
       expect(errors.length).toBe(1);
       expect(errors[0].rowNumber).toBe(5);
-      expect((prisma as any).orderError.findMany).toHaveBeenCalledWith({
+      expect(prisma.orderError.findMany).toHaveBeenCalledWith({
         where: { uploadId: "upl-123" },
         orderBy: { rowNumber: "asc" },
       });

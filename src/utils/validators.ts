@@ -1,89 +1,11 @@
-import { z } from "zod";
+import { orderRowSchema } from "../validations/orders.validation.js";
+import type {
+  ValidationResult,
+  ParsedOrder,
+  InvalidRow,
+} from "../types/orders.types.js";
 
-export interface ParsedOrder {
-  orderId: string;
-  customerId: string;
-  orderDate: Date;
-  orderAmount: number;
-  status: string;
-}
-
-export interface ValidationResult {
-  valid: boolean;
-  errors: string[];
-  data?: ParsedOrder;
-}
-
-export interface InvalidRow {
-  rowNumber: number;
-  rawData: Record<string, string>;
-  errors: string[];
-}
-
-const ALLOWED_STATUSES = [
-  "pending",
-  "processing",
-  "shipped",
-  "delivered",
-  "cancelled",
-  "completed",
-  "returned",
-  "refunded",
-] as const;
-
-const orderRowSchema = z.object({
-  order_id: z.string().min(1, "order_id is required"),
-  customer_id: z.string().min(1, "customer_id is required"),
-  order_date: z
-    .string()
-    .min(1, "order_date is required")
-    .transform((val, ctx) => {
-      const d = new Date(val);
-      if (isNaN(d.getTime())) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `order_date is not a valid date: "${val}"`,
-        });
-        return z.NEVER;
-      }
-      return d;
-    }),
-  order_amount: z
-    .string()
-    .min(1, "order_amount is required")
-    .transform((val, ctx) => {
-      const num = parseFloat(val);
-      if (isNaN(num)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `order_amount is not a valid number: "${val}"`,
-        });
-        return z.NEVER;
-      }
-      if (num < 0) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `order_amount must be non-negative: ${num}`,
-        });
-        return z.NEVER;
-      }
-      return num;
-    }),
-  status: z
-    .string()
-    .min(1, "status is required")
-    .transform((val) => val.toLowerCase())
-    .superRefine((val, ctx) => {
-      if (
-        !ALLOWED_STATUSES.includes(val as (typeof ALLOWED_STATUSES)[number])
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `status "${val}" is not valid. Allowed: ${ALLOWED_STATUSES.join(", ")}`,
-        });
-      }
-    }),
-});
+export type { ParsedOrder, ValidationResult, InvalidRow };
 
 /**
  * Validates a single CSV row and returns a typed ParsedOrder if valid.
@@ -118,7 +40,9 @@ export function validateOrderRow(
  * Normalizes CSV row keys to snake_case for consistent access.
  * Handles variations like "Order ID", "orderId", "order-id" → "order_id"
  */
-function normalizeRow(row: Record<string, string>): Record<string, string> {
+export function normalizeRow(
+  row: Record<string, string>,
+): Record<string, string> {
   const normalized: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(row)) {

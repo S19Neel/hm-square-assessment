@@ -11,6 +11,7 @@ const envSchema = z.object({
     .enum(["development", "production", "test"])
     .default("development"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  CSV_BATCH_SIZE: z.coerce.number().int().positive().default(500),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
