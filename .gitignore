@@ -26,3 +26,5 @@ pnpm-debug.log*
 
 # OS metadata
 Thumbs.db
+
+/src/generated/prisma
