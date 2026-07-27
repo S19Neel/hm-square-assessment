@@ -14,20 +14,26 @@ const NUM_PARTITIONS = 4;
 export async function insertOrderBatch(orders: ParsedOrder[]): Promise<number> {
   if (orders.length === 0) return 0;
 
-  const result = await prisma.$transaction(async (tx: any) => {
-    const created = await tx.order.createMany({
-      data: orders.map((order) => ({
-        orderId: order.orderId,
-        customerId: order.customerId,
-        orderDate: order.orderDate,
-        orderAmount: order.orderAmount,
-        status: order.status,
-      })),
-      skipDuplicates: true,
-    });
+  const result = await prisma.$transaction(
+    async (tx: any) => {
+      const created = await tx.order.createMany({
+        data: orders.map((order) => ({
+          orderId: order.orderId,
+          customerId: order.customerId,
+          orderDate: order.orderDate,
+          orderAmount: order.orderAmount,
+          status: order.status,
+        })),
+        skipDuplicates: true,
+      });
 
-    return created.count;
-  });
+      return created.count;
+    },
+    {
+      maxWait: 10000,
+      timeout: 30000,
+    },
+  );
 
   logger.info("Batch insert completed", {
     batchSize: orders.length,

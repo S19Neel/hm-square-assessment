@@ -24,6 +24,7 @@ const ALLOWED_STATUSES = [
   "shipped",
   "delivered",
   "cancelled",
+  "completed",
   "returned",
   "refunded",
 ];
@@ -116,9 +117,8 @@ function normalizeRow(row: Record<string, string>): Record<string, string> {
   for (const [key, value] of Object.entries(row)) {
     const normalizedKey = key
       .trim()
-      .toLowerCase()
-      .replace(/[\s-]+/g, "_") // spaces and hyphens → underscore
       .replace(/([a-z])([A-Z])/g, "$1_$2") // camelCase → snake_case
+      .replace(/[\s-]+/g, "_") // spaces and hyphens → underscore
       .toLowerCase();
 
     normalized[normalizedKey] = value;
