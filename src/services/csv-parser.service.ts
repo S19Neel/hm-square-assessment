@@ -1,16 +1,11 @@
 import { Readable } from "stream";
 import { parse } from "csv-parse";
-import {
-  validateOrderRow,
-  type ParsedOrder,
-  type InvalidRow,
-} from "../utils/validators.js";
+import { env } from "../config/env.js";
+import { validateOrderRow } from "../utils/validators.js";
 import { logger } from "../utils/logger.js";
+import type { ParsedOrder, InvalidRow, CSVBatch } from "../types/index.js";
 
-export interface CSVBatch {
-  validOrders: ParsedOrder[];
-  invalidRows: InvalidRow[];
-}
+export type { CSVBatch };
 
 /**
  * Streaming CSV parser that yields batches of validated rows.
@@ -20,10 +15,10 @@ export interface CSVBatch {
  * of `batchSize` before being yielded to the caller for insertion.
  */
 export async function* parseCSVStream(
-  buffer: Buffer,
-  batchSize: number = 500,
+  input: Buffer | Readable,
+  batchSize: number = env.CSV_BATCH_SIZE,
 ): AsyncGenerator<CSVBatch> {
-  const stream = Readable.from(buffer);
+  const stream = Buffer.isBuffer(input) ? Readable.from(input) : input;
 
   const parser = stream.pipe(
     parse({

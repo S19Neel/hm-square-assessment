@@ -26,3 +26,15 @@ model Order {
   @@index([status], name: "idx_orders_status")
   @@map("orders")
 }
+
+model OrderError {
+  id        String   @id @default(uuid()) @db.Uuid
+  uploadId  String   @map("upload_id")
+  rowNumber Int      @map("row_number")
+  rawData   Json     @map("raw_data")
+  errors    Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([uploadId], name: "idx_order_errors_upload_id")
+  @@map("order_errors")
+}

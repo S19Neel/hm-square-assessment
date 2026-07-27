@@ -1,7 +1,12 @@
 import express, { Express, Request, Response } from "express";
 import { env } from "./config/env.js";
-import { connectDatabase, disconnectDatabase } from "./config/database.js";
+import {
+  connectDatabase,
+  disconnectDatabase,
+  pingDatabase,
+} from "./config/database.js";
 import { logger } from "./utils/logger.js";
+import { errorHandler } from "./middleware/error.middleware.js";
 import ordersRoutes from "./routes/orders.routes.js";
 
 const app: Express = express();
@@ -13,7 +18,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(ordersRoutes);
 
 // Root Route
-app.get("/", (req: Request, res: Response) => {
+app.get("/", (_req: Request, res: Response) => {
   res.status(200).json({
     message: "Server is running",
     healthCheck: "/health",
@@ -21,14 +26,24 @@ app.get("/", (req: Request, res: Response) => {
 });
 
 // Health Checkup Route
-app.get("/health", (req: Request, res: Response) => {
-  res.status(200).json({
-    status: "UP",
-    message: "Server is healthy",
+app.get("/health", async (_req: Request, res: Response) => {
+  const dbHealthy = await pingDatabase();
+  const status = dbHealthy ? "UP" : "DEGRADED";
+  const statusCode = dbHealthy ? 200 : 503;
+
+  res.status(statusCode).json({
+    status,
+    message: dbHealthy
+      ? "Server and database are healthy"
+      : "Database connection issues",
+    database: dbHealthy ? "CONNECTED" : "DISCONNECTED",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
   });
 });
+
+// Global Error Handler Middleware
+app.use(errorHandler);
 
 // Start server
 async function start(): Promise<void> {

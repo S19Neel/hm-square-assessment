@@ -1,25 +1,25 @@
 import dotenv from "dotenv";
+import { z } from "zod";
 
 dotenv.config();
 
-interface EnvConfig {
-  PORT: number;
-  DATABASE_URL: string;
-  GCS_BUCKET_NAME: string;
-  NODE_ENV: string;
+const envSchema = z.object({
+  PORT: z.coerce.number().default(5000),
+  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  GCS_BUCKET_NAME: z.string().min(1, "GCS_BUCKET_NAME is required"),
+  NODE_ENV: z
+    .enum(["development", "production", "test"])
+    .default("development"),
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  CSV_BATCH_SIZE: z.coerce.number().int().positive().default(500),
+});
+
+const parsedEnv = envSchema.safeParse(process.env);
+
+if (!parsedEnv.success) {
+  console.error("❌ Invalid environment variables:", parsedEnv.error.format());
+  throw new Error("Invalid environment variables");
 }
 
-function getEnvVar(key: string): string {
-  const value = process.env[key];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${key}`);
-  }
-  return value;
-}
-
-export const env: EnvConfig = {
-  PORT: parseInt(process.env.PORT || "5000", 10),
-  DATABASE_URL: getEnvVar("DATABASE_URL"),
-  GCS_BUCKET_NAME: getEnvVar("GCS_BUCKET_NAME"),
-  NODE_ENV: process.env.NODE_ENV || "development",
-};
+export const env = parsedEnv.data;
+export type EnvConfig = z.infer<typeof envSchema>;

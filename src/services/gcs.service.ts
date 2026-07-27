@@ -1,22 +1,20 @@
+import { Readable } from "stream";
 import { Storage } from "@google-cloud/storage";
 import { env } from "../config/env.js";
 import { logger } from "../utils/logger.js";
+import type { GCSUploadResult } from "../types/index.js";
+
+export type { GCSUploadResult };
 
 const storage = new Storage();
 const bucket = storage.bucket(env.GCS_BUCKET_NAME);
-
-export interface GCSUploadResult {
-  gcsUri: string;
-  publicUrl: string;
-  filename: string;
-}
 
 /**
  * Uploads a file buffer to Google Cloud Storage.
  * Organizes files under: orders/{timestamp}_{originalFilename}
  */
 export async function uploadFileToGCS(
-  buffer: Buffer,
+  input: Buffer | Readable,
   originalFilename: string,
 ): Promise<GCSUploadResult> {
   const timestamp = Date.now();
@@ -26,21 +24,38 @@ export async function uploadFileToGCS(
   logger.info("GCS upload started", {
     bucket: env.GCS_BUCKET_NAME,
     destination,
-    sizeBytes: buffer.length,
+    isBuffer: Buffer.isBuffer(input),
   });
 
   const file = bucket.file(destination);
 
-  await file.save(buffer, {
-    resumable: false, // Not needed for files under 10MB typically
-    contentType: "text/csv",
-    metadata: {
+  if (Buffer.isBuffer(input)) {
+    await file.save(input, {
+      resumable: false,
+      contentType: "text/csv",
       metadata: {
-        uploadedAt: new Date().toISOString(),
-        originalFilename,
+        metadata: {
+          uploadedAt: new Date().toISOString(),
+          originalFilename,
+        },
       },
-    },
-  });
+    });
+  } else {
+    await new Promise<void>((resolve, reject) => {
+      const writeStream = file.createWriteStream({
+        resumable: false,
+        contentType: "text/csv",
+        metadata: {
+          metadata: {
+            uploadedAt: new Date().toISOString(),
+            originalFilename,
+          },
+        },
+      });
+
+      input.pipe(writeStream).on("error", reject).on("finish", resolve);
+    });
+  }
 
   const gcsUri = `gs://${env.GCS_BUCKET_NAME}/${destination}`;
   const publicUrl = `https://storage.googleapis.com/${env.GCS_BUCKET_NAME}/${destination}`;
